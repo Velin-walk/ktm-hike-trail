@@ -46,6 +46,39 @@ export function parseKML(kmlText, fileName) {
   };
 }
 
+export function routeToGPX(route) {
+  const segments = route?.lineSegments?.length ? route.lineSegments : [route?.coordinates || []];
+  const tracks = segments.map(segment => segment.map(point => {
+    const elevation = Number.isFinite(point.ele) ? `<ele>${point.ele}</ele>` : '';
+    return `<trkpt lat="${point.lat}" lon="${point.lng}">${elevation}</trkpt>`;
+  }).join('')).join('');
+  const name = String(route?.name || 'Hiking Route')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return `<?xml version="1.0" encoding="UTF-8"?><gpx version="1.1" creator="KTM Hike Trail" xmlns="http://www.topografix.com/GPX/1/1"><metadata><name>${name}</name></metadata><trk><name>${name}</name><trkseg>${tracks}</trkseg></trk></gpx>`;
+}
+
+export function parseGPX(gpxText, fileName, nameOverride = '') {
+  const parser = new DOMParser();
+  const xmlDoc = parser.parseFromString(gpxText, 'application/xml');
+  const points = Array.from(xmlDoc.querySelectorAll('trkpt, rtept, wpt'))
+    .map(point => {
+      const lat = parseFloat(point.getAttribute('lat'));
+      const lng = parseFloat(point.getAttribute('lon'));
+      const elevation = parseFloat(point.querySelector('ele')?.textContent || '0');
+      return Number.isFinite(lat) && Number.isFinite(lng) ? `${lng},${lat},${Number.isFinite(elevation) ? elevation : 0}` : null;
+    })
+    .filter(Boolean);
+
+  if (points.length < 2) return null;
+  const fallbackName = xmlDoc.querySelector('metadata > name, trk > name, rte > name')?.textContent?.trim() || fileName.replace(/\.gpx$/i, '').replace(/_/g, ' ');
+  const name = nameOverride || fallbackName;
+  const description = xmlDoc.querySelector('metadata > desc, trk > desc, rte > desc')?.textContent?.trim() || '';
+  const escapedDescription = description.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const escapedName = name.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const syntheticKml = `<kml><Document><name>${escapedName}</name><description>${escapedDescription}</description><Placemark><LineString><coordinates>${points.join(' ')}</coordinates></LineString></Placemark></Document></kml>`;
+  return parseKML(syntheticKml, fileName);
+}
+
 function parseCoordinateString(str) {
   return str.trim().split(/\s+/)
     .map(coord => {

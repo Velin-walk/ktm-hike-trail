@@ -1,17 +1,10 @@
 import { memo } from 'react';
-import { Mountain, Clock, TrendingUp, ChevronRight, Trash2, MapPin, Star } from 'lucide-react';
+import { ChevronRight, Trash2 } from 'lucide-react';
 
 const ROUTE_COLORS = [
   '#f97316', '#60a5fa', '#34d399', '#f59e0b', '#a78bfa',
   '#fb7185', '#22d3ee', '#84cc16', '#e879f9', '#38bdf8',
 ];
-
-const DIFFICULTY_CLASS = {
-  Easy: 'badge-easy',
-  Moderate: 'badge-moderate',
-  Hard: 'badge-hard',
-  Extreme: 'badge-extreme',
-};
 
 const RouteCard = memo(function RouteCard({ route, index, isActive, onClick, onDelete }) {
   const color = ROUTE_COLORS[index % ROUTE_COLORS.length];
@@ -34,43 +27,19 @@ const RouteCard = memo(function RouteCard({ route, index, isActive, onClick, onD
       }} />
 
       <div style={{ paddingLeft: 12 }}>
-        {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 10 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div
-              className="truncate"
-              style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 2, lineHeight: 1.3 }}
-            >
-              {route.name}
-            </div>
-            
-            {(route.district || route.highlights) && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginBottom: 6 }}>
-                {route.district && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--text-secondary)', fontSize: 10 }}>
-                    <MapPin size={10} />
-                    <span className="truncate">{route.district}{route.province ? `, ${route.province}` : ''}</span>
-                  </div>
-                )}
-                {route.highlights && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--text-secondary)', fontSize: 10 }}>
-                    <Star size={10} />
-                    <span className="truncate">{route.highlights}</span>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span
-                className={DIFFICULTY_CLASS[route.difficulty]}
-                style={{ fontSize: 10, fontWeight: 600, padding: '2px 8px', borderRadius: 20 }}
-              >
-                {route.difficulty}
-              </span>
-            </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          {/* Title with colored stats */}
+          <div style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+            <span>{route.name} : </span>
+            <span style={{ color: '#f97316' }}>{route.stats.distance}km</span>
+            <span>, </span>
+            <span style={{ color: '#ef4444' }}>+{route.stats.elevationGain}m</span>
+            <span>, </span>
+            <span style={{ color: '#10b981' }}>-{route.stats.elevationLoss}m</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+
+          {/* Action buttons */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginLeft: 8 }}>
             <button
               onClick={handleDelete}
               style={{
@@ -81,35 +50,12 @@ const RouteCard = memo(function RouteCard({ route, index, isActive, onClick, onD
               }}
               title="Delete Route"
               className="group-hover:opacity-100"
+              aria-label="Delete route"
             >
-              <Trash2 size={11} />
+              <Trash2 size={12} />
             </button>
-            <ChevronRight size={14} style={{ color: isActive ? color : 'var(--text-muted)', transition: 'color 0.2s' }} />
+            <ChevronRight size={14} style={{ color: isActive ? color : 'var(--text-muted)', transition: 'color 0.2s', flexShrink: 0 }} />
           </div>
-        </div>
-
-        {/* Stats grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-          <StatItem icon={<Mountain size={10} />} value={`${route.stats.distance}km`} label="Distance" color={color} />
-          <StatItem icon={<TrendingUp size={10} />} value={`+${route.stats.elevationGain}m`} label="Gain" color={color} />
-          <StatItem icon={<Clock size={10} />} value={`${route.stats.estimatedHours}h`} label="Est. Time" color={color} />
-        </div>
-
-        {/* Elevation range bar */}
-        <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <div style={{ flex: 1, height: 4, background: 'var(--border)', borderRadius: 2, overflow: 'hidden', position: 'relative' }}>
-            <div style={{
-              position: 'absolute',
-              left: `${Math.max(0, ((route.stats.minElevation - 500) / 8500) * 100)}%`,
-              width: `${Math.min(100, ((route.stats.maxElevation - route.stats.minElevation) / 8500) * 100)}%`,
-              height: '100%',
-              background: `linear-gradient(90deg, ${color}88, ${color})`,
-              borderRadius: 2,
-            }} />
-          </div>
-          <span style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-            {route.stats.minElevation}m – {route.stats.maxElevation}m
-          </span>
         </div>
       </div>
     </div>
@@ -117,15 +63,3 @@ const RouteCard = memo(function RouteCard({ route, index, isActive, onClick, onD
 });
 
 export default RouteCard;
-
-function StatItem({ icon, value, label, color }) {
-  return (
-    <div style={{ background: 'var(--bg-secondary)', borderRadius: 8, padding: '6px 8px', border: '1px solid var(--border)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2, color: 'var(--text-muted)' }}>
-        {icon}
-        <span style={{ fontSize: 9, textTransform: 'uppercase', letterSpacing: '0.1em' }}>{label}</span>
-      </div>
-      <div style={{ fontSize: 13, fontWeight: 700, color }}>{value}</div>
-    </div>
-  );
-}

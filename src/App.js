@@ -1,26 +1,15 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Search, Compass, X, Filter, Sun, Moon, RefreshCw, Menu, Trees, AlertTriangle } from 'lucide-react';
+import { Search, Compass, X, Filter, Sun, Moon, RefreshCw, Menu, AlertTriangle, Upload } from 'lucide-react';
 import MapView from './components/MapView';
 import RouteCard from './components/RouteCard';
 import RouteDetail from './components/RouteDetail';
-import { parseKML } from './utils/kmlParser';
+import { parseGPX, parseKML } from './utils/kmlParser';
+import { resolveAssetUrl } from './utils/assetUrl';
 import './index.css';
+import { auth, signInWithPopup, signOut, googleProvider } from './firebaseConfig.js';
+import { onAuthStateChanged } from 'firebase/auth';
 
-const GITHUB_REPO_URL = 'https://github.com/833M0L3/ktm-hike-trail';
-
-function GitHubMark({ size = 16 }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="currentColor"
-      aria-hidden="true"
-    >
-      <path d="M12 .5C5.648.5.5 5.648.5 12a11.5 11.5 0 0 0 7.86 10.915c.575.106.785-.25.785-.556 0-.274-.01-1-.016-1.962-3.197.695-3.872-1.54-3.872-1.54-.523-1.328-1.278-1.682-1.278-1.682-1.045-.714.08-.7.08-.7 1.155.08 1.763 1.186 1.763 1.186 1.026 1.758 2.692 1.25 3.348.956.103-.743.402-1.25.73-1.538-2.552-.29-5.236-1.276-5.236-5.682 0-1.255.448-2.281 1.182-3.085-.118-.29-.512-1.458.112-3.04 0 0 .965-.309 3.162 1.178A10.97 10.97 0 0 1 12 6.035c.975.005 1.957.132 2.875.387 2.195-1.487 3.158-1.178 3.158-1.178.626 1.582.232 2.75.114 3.04.736.804 1.18 1.83 1.18 3.085 0 4.417-2.689 5.389-5.25 5.673.414.356.783 1.058.783 2.133 0 1.54-.014 2.782-.014 3.16 0 .31.207.668.79.555A11.503 11.503 0 0 0 23.5 12C23.5 5.648 18.352.5 12 .5Z" />
-    </svg>
-  );
-}
+export { resolveAssetUrl };
 
 // Notify the map whenever sidebar toggles
 const fireSidebarToggle = () => {
@@ -38,13 +27,24 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterDifficulty, setFilterDifficulty] = useState('All');
   const [filterLocation, setFilterLocation] = useState('All');
-  const [sortBy, setSortBy] = useState('name');
+  const [sortBy, setSortBy] = useState('uploadedAt');
   const [showFilters, setShowFilters] = useState(false);
   const [theme, setTheme] = useState(() => localStorage.getItem('ht-theme') || 'day');
   const [loadingState, setLoadingState] = useState({ status: 'idle', progress: 0, total: 0, loaded: 0, errors: [] });
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
   const [isLoading, setIsLoading] = useState(true);
   const [detailPanelHeight, setDetailPanelHeight] = useState(0);
+  const [isContributionOpen, setIsContributionOpen] = useState(false);
+  const [contributionName, setContributionName] = useState('');
+  const [contributionFile, setContributionFile] = useState(null);
+  const [contributionError, setContributionError] = useState('');
+  const [isContributing, setIsContributing] = useState(false);
+  const [authModalName, setAuthModalName] = useState('');
+  const [user, setUser] = useState(null);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+
+
 
   // When a route is activated, pre-calculate the default panel height
   const handleDetailPanelHeightChange = (h) => setDetailPanelHeight(h);
@@ -56,6 +56,15 @@ export default function App() {
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
+
+useEffect(() => {
+  if (!auth) return undefined;
+
+  const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    setUser(currentUser);
+  });
+  return () => unsubscribe();
+}, []);
 
   // Apply theme to document
   useEffect(() => {
@@ -71,7 +80,7 @@ export default function App() {
     setRoutes([]);
 
     try {
-      const manifestRes = await fetch(`${process.env.PUBLIC_URL}/kml/routes-metadata.json?t=` + Date.now());
+      const manifestRes = await fetch(`${resolveAssetUrl('/kml/routes-metadata.json')}?t=${Date.now()}`);
       if (!manifestRes.ok) throw new Error('routes-metadata.json not found in /public/kml/');
       const metadataMap = await manifestRes.json();
       const fileNames = Object.keys(metadataMap);
@@ -96,6 +105,10 @@ export default function App() {
           district: meta.district || '',
           nearbyCity: meta.nearbyCity || '',
           highlights: meta.highlights || '',
+          uploadedAt: meta.uploadedAt || '',
+          contributorEmail: meta.contributorEmail || '',
+          contributorName: meta.contributorName || '',
+          contributorUid: meta.contributorUid || '',
           bounds: meta.bounds,
           coordinates: meta.startPos ? [meta.startPos, meta.startPos] : [], 
           isLazyLoaded: false
@@ -111,9 +124,15 @@ export default function App() {
     }
   }, []);
 
-  useEffect(() => { loadKMLFolder(); }, [loadKMLFolder]);
+  useEffect(() => {
+    if (user) {
+      loadKMLFolder();
+    }
+  }, [user, loadKMLFolder]);
 
   const handleRouteClick = useCallback(async (route) => {
+      localStorage.setItem(`route-viewed-${route.id}`, Date.now().toString());
+
     // On mobile, hide the sidebar so the map + elevation card are visible
     if (isMobile) { setSidebarOpen(false); fireSidebarToggle(); }
 
@@ -124,7 +143,7 @@ export default function App() {
 
     if (!route.isLazyLoaded) {
       try {
-        const res = await fetch(`${process.env.PUBLIC_URL}/kml/${encodeURIComponent(route.fileName)}?t=${Date.now()}`);
+        const res = await fetch(`${resolveAssetUrl(`/kml/${encodeURIComponent(route.fileName)}`)}?t=${Date.now()}`);
         if (!res.ok) throw new Error(`HTTP ${res.status} while loading ${route.fileName}`);
         const text = await res.text();
         
@@ -132,8 +151,10 @@ export default function App() {
         // before blocking the main thread with heavy KML parsing
         await new Promise(resolve => setTimeout(resolve, 350));
         
-        const fullParsed = parseKML(text, route.fileName);
-        if (!fullParsed) throw new Error('KML has no valid route geometry');
+        const routeExtension = (route.fileName || '').split('.').pop()?.toLowerCase();
+        const parser = routeExtension === 'gpx' ? parseGPX : parseKML;
+        const fullParsed = parser(text, route.fileName);
+        if (!fullParsed) throw new Error(`${routeExtension?.toUpperCase() || 'Route'} file has no valid route geometry`);
         if (fullParsed) {
           const updatedRoute = {
             ...fullParsed,
@@ -190,37 +211,175 @@ export default function App() {
     setActiveRoute(prev => (prev?.id === id ? null : prev));
   }, []);
 
-  const filteredRoutes = routes
-    .filter(r => {
-      const matchSearch = r.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          (r.district && r.district.toLowerCase().includes(searchQuery.toLowerCase())) ||
-                          (r.province && r.province.toLowerCase().includes(searchQuery.toLowerCase())) ||
-                          (r.highlights && r.highlights.toLowerCase().includes(searchQuery.toLowerCase()));
-      const matchDiff = filterDifficulty === 'All' || r.difficulty === filterDifficulty;
-      const matchLoc = filterLocation === 'All' || r.district === filterLocation;
-      return matchSearch && matchDiff && matchLoc;
-    })
-    .sort((a, b) => {
-      if (sortBy === 'distance') return b.stats.distance - a.stats.distance;
-      if (sortBy === 'gain') return b.stats.elevationGain - a.stats.elevationGain;
-      if (sortBy === 'difficulty') { const o = {Easy:0,Moderate:1,Hard:2,Extreme:3}; return o[b.difficulty] - o[a.difficulty]; }
-      return a.name.localeCompare(b.name);
-    });
+  const handleContributionFile = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const extension = file.name.split('.').pop()?.toLowerCase();
+    if (!['gpx', 'kml', 'json'].includes(extension)) {
+      setContributionFile(null);
+      setContributionError('Choose a GPX, KML, or JSON file.');
+      return;
+    }
+    setContributionFile(file);
+    setContributionError('');
+  };
+
+  const handleContribute = async (event) => {
+    event.preventDefault();
+    if (!contributionFile || !contributionName.trim()) {
+      setContributionError('Add a trail name and choose a GPX or KML file.');
+      return;
+    }
+
+    setIsContributing(true);
+    try {
+      const fileText = await contributionFile.text();
+      const extension = contributionFile.name.split('.').pop()?.toLowerCase();
+      if (extension === 'json') {
+        JSON.parse(fileText);
+      } else {
+        const parsedRoute = extension === 'gpx'
+          ? parseGPX(fileText, contributionFile.name, contributionName)
+          : parseKML(fileText, contributionFile.name, contributionName);
+        if (!parsedRoute) throw new Error('No route points were found in that file.');
+      }
+
+      const contributorDisplayName = authModalName.trim() || user?.displayName || user?.email || contributionName.trim();
+      const formData = new FormData();
+      formData.append('name', contributionName.trim());
+      formData.append('file', contributionFile);
+      formData.append('email', user?.email || '');
+      formData.append('contributorName', contributorDisplayName);
+      formData.append('contributorUid', user?.uid || '');
+      const response = await fetch('/api/upload', { method: 'POST', body: formData });
+      const responseText = await response.text();
+      let result;
+      try {
+        result = JSON.parse(responseText);
+      } catch {
+        throw new Error(response.status === 404
+          ? 'Upload API not found. Start the Express server with "node server.js" and restart the React app.'
+          : 'Upload API returned an invalid response. Check that the Express server is running.');
+      }
+      if (!response.ok) throw new Error(result.error || 'Could not save this route.');
+
+      if (extension === 'kml' || extension === 'gpx') await loadKMLFolder();
+      setIsContributionOpen(false);
+      setContributionName('');
+      setContributionFile(null);
+      setContributionError('');
+    } catch (error) {
+      setContributionError(error.message || 'Could not read this route file.');
+    } finally {
+      setIsContributing(false);
+    }
+  };
+
+const handleGoogleSignIn = async () => {
+  try {
+    await signInWithPopup(auth, googleProvider);
+    localStorage.setItem('userName', user?.displayName || user?.email || '');
+    setIsAuthModalOpen(false);
+    setAuthModalName('');
+  } catch (error) {
+    console.error('Sign in failed:', error);
+  }
+};
+
+const handleSignOut = async () => {
+  if (!auth) return;
+
+  await signOut(auth);
+};
+
+const filteredRoutes = routes
+  .filter(r => {
+    const matchSearch = r.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        (r.district && r.district.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                        (r.province && r.province.toLowerCase().includes(searchQuery.toLowerCase())) ||
+                        (r.highlights && r.highlights.toLowerCase().includes(searchQuery.toLowerCase()));
+    const matchDiff = filterDifficulty === 'All' || r.difficulty === filterDifficulty;
+    const matchLoc = filterLocation === 'All' || r.district === filterLocation;
+    return matchSearch && matchDiff && matchLoc;
+  })
+  .sort((a, b) => {
+    if (sortBy === 'distance') return b.stats.distance - a.stats.distance;
+    if (sortBy === 'gain') return b.stats.elevationGain - a.stats.elevationGain;
+    if (sortBy === 'difficulty') { 
+      const o = {Easy:0, Moderate:1, Hard:2, Extreme:3}; 
+      return o[b.difficulty] - o[a.difficulty]; 
+    }
+    if (sortBy === 'uploadedAt') {
+      return new Date(b.uploadedAt || 0).getTime() - new Date(a.uploadedAt || 0).getTime();
+    }
+    return a.name.localeCompare(b.name);
+  });
 
   const totalStats = routes.reduce((acc, r) => ({
     distance: acc.distance + (r.stats?.distance || 0),
     gain: acc.gain + (r.stats?.elevationGain || 0),
   }), { distance: 0, gain: 0 });
 
+  const myContributedRoutes = user ? routes.filter(r => {
+    const sameUid = !!user.uid && !!r.contributorUid && r.contributorUid === user.uid;
+    const sameEmail = !!user.email && !!r.contributorEmail && r.contributorEmail.toLowerCase() === user.email.toLowerCase();
+    return sameUid || sameEmail;
+  }) : [];
+
   const isDark = theme === 'dark';
+
+  if (!user) {
+    return (
+      <div style={{
+        minHeight:'100vh',
+        display:'flex',
+        alignItems:'center',
+        justifyContent:'center',
+        background:'linear-gradient(135deg, var(--bg-primary), var(--bg-secondary))',
+        padding:24,
+      }}>
+        <div style={{
+          width:'min(100%, 420px)',
+          background:'var(--bg-card)',
+          border:'1px solid var(--border)',
+          borderRadius:18,
+          padding:28,
+          boxShadow:'0 20px 60px rgba(0,0,0,0.18)',
+          textAlign:'center',
+        }}>
+          <img src={resolveAssetUrl('/logo.png')} alt="Logo" style={{ width:64, height:64, borderRadius:16, marginBottom:16 }} />
+          <div style={{ fontSize:24, fontWeight:800, color:'var(--text-primary)', marginBottom:8 }}>MAP MINERS</div>
+          <div style={{ fontSize:13, color:'var(--text-muted)', marginBottom:20, lineHeight:1.6 }}>
+            Sign in to access the trail map and contribute routes.
+          </div>
+          <button
+            onClick={handleGoogleSignIn}
+            style={{
+              width:'100%',
+              padding:'12px 16px',
+              border:'none',
+              borderRadius:10,
+              background:'var(--accent-primary)',
+              color:'#ffffff',
+              fontSize:14,
+              fontWeight:700,
+              cursor:'pointer',
+            }}
+          >
+            Continue with Google
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display:'flex', height:'100vh', overflow:'hidden', background:'var(--bg-primary)', position: 'relative' }}>
 
       {/* Sidebar */}
       <div style={{
-        width: sidebarOpen ? (isMobile ? '100%' : 340) : 0,
-        minWidth: sidebarOpen ? (isMobile ? '100%' : 340) : 0,
+        width: sidebarOpen ? (isMobile ? '100%' : 425) : 0,
+minWidth: sidebarOpen ? (isMobile ? '100%' : 425) : 0,
         overflow:'hidden', transition:'all 0.35s cubic-bezier(0.4,0,0.2,1)',
         display:'flex', flexDirection:'column',
         background:'var(--sidebar-bg)',
@@ -229,61 +388,148 @@ export default function App() {
         height: '100%',
         zIndex: 2000,
       }}>
-        <div style={{ width: isMobile ? '100%' : 340, display:'flex', flexDirection:'column', height:'100%', overflow:'hidden' }}>
+        <div style={{ width: isMobile ? '100%' : 425, display:'flex', flexDirection:'column', height:'100%', overflow:'hidden' }}>
 
           {/* Header */}
-          <div style={{ padding:'16px 16px 0', flexShrink:0 }}>
+          <div style={{ padding:'20px 20px 0', flexShrink:0 }}>
             <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:4 }}>
               {/* Sidebar toggle */}
               <button className="theme-toggle" onClick={() => { setSidebarOpen(false); fireSidebarToggle(); }} title="Close Sidebar" style={{ border: 'none', background: 'transparent' }}>
                 <Menu size={18} />
               </button>
-              {/* Logo */}
-              <div style={{ width:36, height:36, borderRadius:10, background:'linear-gradient(135deg, #10b981 0%, #059669 100%)', display:'flex', alignItems:'center', justifyContent:'center', boxShadow:'0 4px 12px rgba(16,185,129,0.3)', flexShrink:0 }}>
-                <Trees size={18} style={{ color:'white' }} />
-              </div>
-              <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontSize:16, fontWeight:800, color:'var(--text-primary)', fontFamily:'Playfair Display, serif', letterSpacing:'-0.02em' }}>Kathmandu Valley Hikes</div>
-                <a 
-                  href="https://www.walknepalwalk.com.np/trail-maps" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  style={{ display:'block', fontSize:9, color:'var(--text-muted)', letterSpacing:'0.06em', textTransform:'uppercase', fontWeight:600, textDecoration:'none', transition:'color 0.2s' }}
-                  onMouseEnter={e => e.target.style.color='var(--accent-primary)'}
-                  onMouseLeave={e => e.target.style.color='var(--text-muted)'}
-                >
-                  WalkNepalWalk Community Data
-                </a>
-              </div>
-              {/* Theme toggle */}
-              <div style={{ display:'flex', alignItems:'center', gap:8, flexShrink:0 }}>
+             {/* Logo */}
+<div style={{ display:'flex', alignItems:'center', gap:12, flex:1, minWidth:0 }}>
+  <img src={resolveAssetUrl('/logo.png')} alt="Logo" style={{ width:48, height:48, borderRadius:10, flexShrink:0, objectFit:'cover' }} />
+  <div style={{ minWidth:0 }}>
+    <div style={{ fontSize:16, fontWeight:800, color:'var(--text-primary)', fontFamily:'Montserrat, serif', letterSpacing:'-0.02em', lineHeight:1 }}>MAP MINERS</div>
+    <a 
+      href="https://www.walknepalwalk.com.np/trail-maps" 
+      target="_blank" 
+      rel="noopener noreferrer"
+      style={{ display:'block', fontSize:9, color:'var(--text-muted)', letterSpacing:'0.06em', textTransform:'lowercase', fontWeight:600, textDecoration:'none', transition:'color 0.2s', marginTop:2 }}
+      onMouseEnter={e => e.target.style.color='var(--accent-primary)'}
+      onMouseLeave={e => e.target.style.color='var(--text-muted)'}
+    >
+      CONTRIBUTION based Community Data
+    </a>
+  </div>
+</div>
+
+              {/* Top Right: User Profile & Theme Toggle */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, marginLeft: 'auto' }}>
+                {user && (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)', maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {user.displayName || user.email}
+                    </span>
+                    <button 
+                      onClick={handleSignOut} 
+                      style={{ color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, padding: 0 }}
+                      onMouseEnter={e => e.target.style.color = '#ef4444'}
+                      onMouseLeave={e => e.target.style.color = 'var(--text-muted)'}
+                    >
+                      Sign out
+                    </button>
+                  </div>
+                )}
+
                 <button className="theme-toggle" onClick={toggleTheme} title={isDark ? 'Switch to Day Mode' : 'Switch to Dark Mode'}>
                   {isDark ? <Sun size={16} /> : <Moon size={16} />}
                 </button>
-                <a
-                  className="theme-toggle"
-                  href={GITHUB_REPO_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title="Open project GitHub repository"
-                  aria-label="Open project GitHub repository"
-                >
-                  <GitHubMark size={16} />
-                </a>
               </div>
             </div>
 
-            {/* Stats bar */}
-            {routes.length > 0 && (
-              <div style={{ marginTop:12, display:'grid', gridTemplateColumns:'repeat(3, 1fr)', gap:8 }}>
-                <MicroStat label="Routes" value={routes.length} />
-                <MicroStat label="km total" value={totalStats.distance.toFixed(0)} />
-                <MicroStat label="m gain" value={`${(totalStats.gain/1000).toFixed(1)}k`} />
-              </div>
-            )}
-
             {/* Loading state */}
             <LoadingStatus state={loadingState} onReload={loadKMLFolder} />
+
+            {/* "My maps" and "Contribute map" side by side */}
+            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+              <button
+                onClick={() => {
+                  if (!user) {
+                    setIsAuthModalOpen(true);
+                  } else {
+                    setProfileOpen(v => !v);
+                  }
+                }}
+                style={{
+                  flex: 1,
+                  padding: '9px 12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 7,
+                  border: '1px solid var(--accent-primary)',
+                  borderRadius: 8,
+                  background: profileOpen ? 'rgba(249,115,22,0.22)' : 'rgba(249,115,22,0.1)',
+                  color: 'var(--accent-primary)',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  transition: 'background 0.2s',
+                }}
+              >
+                <Compass size={14} /> My maps {user && myContributedRoutes.length > 0 ? `(${myContributedRoutes.length})` : ''}
+              </button>
+
+              <button
+                onClick={() => {
+                  if (!user) {
+                    setIsAuthModalOpen(true);
+                  } else {
+                    setIsContributionOpen(true);
+                    setContributionError('');
+                  }
+                }}
+                style={{
+                  flex: 1,
+                  padding: '9px 12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 7,
+                  border: '1px solid var(--accent-primary)',
+                  borderRadius: 8,
+                  background: 'rgba(249,115,22,0.1)',
+                  color: 'var(--accent-primary)',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                }}
+              >
+                <Upload size={14} /> Contribute map
+              </button>
+            </div>
+
+            {user && profileOpen && (
+              <div style={{ marginTop:12, padding:10, border:`1px solid var(--border)`, borderRadius:10, background:'var(--bg-card)' }}>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+                  <div style={{ fontSize:11, fontWeight:700, color:'var(--text-primary)', textTransform:'uppercase', letterSpacing:'0.06em' }}>My maps</div>
+                  <span style={{ fontSize:10, color:'var(--text-muted)' }}>{myContributedRoutes.length}</span>
+                </div>
+
+                {myContributedRoutes.length === 0 ? (
+                  <div style={{ fontSize:11, color:'var(--text-muted)', lineHeight:1.5 }}>No maps contributed yet.</div>
+                ) : (
+                  <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                    {myContributedRoutes.slice(0, 6).map(route => (
+                      <button
+                        key={route.id}
+                        onClick={() => handleRouteClick(route)}
+                        style={{
+                          width:'100%', textAlign:'left', padding:'7px 8px', borderRadius:8,
+                          border:'1px solid var(--border)', background:'var(--bg-secondary)',
+                          color:'var(--text-primary)', cursor:'pointer', display:'flex', justifyContent:'space-between', gap:8,
+                        }}
+                      >
+                        <span style={{ fontSize:11, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{route.name}</span>
+                        <span style={{ fontSize:10, color:'var(--text-muted)', whiteSpace:'nowrap' }}>{route.stats?.distance ?? 0}km</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Search */}
             <div style={{ marginTop:12 }}>
@@ -292,7 +538,7 @@ export default function App() {
                 <input
                   value={searchQuery}
                   onChange={e => setSearchQuery(e.target.value)}
-                  placeholder="Search routes…"
+                  placeholder="Search route"
                   style={{
                     width:'100%', background:'var(--input-bg)', border:`1px solid var(--border)`,
                     borderRadius:8, padding:'8px 10px 8px 30px',
@@ -321,8 +567,10 @@ export default function App() {
                   style={{
                     flex:1, background:'var(--bg-card)', border:`1px solid var(--border)`,
                     borderRadius:6, padding:'5px 8px', color:'var(--text-secondary)',
-                    fontSize:11, outline:'none', cursor:'pointer',
-                  }}>
+                    fontSize: 11, outline: 'none', cursor: 'pointer',
+                  }}
+                >
+                  <option value="uploadedAt">Upload Time</option>
                   <option value="name">Name</option>
                   <option value="distance">Distance</option>
                   <option value="gain">Elev. Gain</option>
@@ -370,7 +618,7 @@ export default function App() {
           </div>
 
           {/* Route list */}
-          <div style={{ flex:1, overflowY:'auto', padding:'0 16px 20px', display:'flex', flexDirection:'column', gap:8 }}>
+         <div style={{ flex:1, overflowY:'auto', padding:'0 20px 20px', display:'flex', flexDirection:'column', gap:8 }}>
             {isLoading && routes.length === 0 ? (
               <div style={{ textAlign:'center', padding:'40px 20px', color:'var(--text-muted)' }}>
                 <div style={{ width:28, height:28, border:`2px solid var(--accent-primary)`, borderTopColor:'transparent', borderRadius:'50%', animation:'spin 0.8s linear infinite', margin:'0 auto 12px' }} />
@@ -404,35 +652,23 @@ export default function App() {
       <div style={{ flex:1, position:'relative', overflow:'hidden' }}>
 
         {/* Floating logo when sidebar closed */}
-        {!sidebarOpen && (
-          <div style={{ position:'absolute', top: isMobile ? 12 : 16, left: isMobile ? 12 : 16, zIndex:1000 }}>
-            <div style={{ padding: isMobile ? '6px 10px' : '8px 14px', background:'var(--bg-primary)', border:`1px solid var(--border)`, borderRadius:12, backdropFilter:'blur(12px)', display:'flex', alignItems:'center', gap:8, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
-              <button className="theme-toggle" onClick={() => { setSidebarOpen(true); fireSidebarToggle(); }} title="Open Sidebar" style={{ border:'none', background:'transparent', color: 'var(--text-primary)' }}>
-                <Menu size={18}/>
-              </button>
-              <div style={{ width:24, height:24, borderRadius:6, background:'linear-gradient(135deg, #10b981 0%, #059669 100%)', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                <Trees size={12} style={{ color:'white' }}/>
-              </div>
-              <span style={{ fontSize:13, fontWeight:700, color:'var(--text-primary)', fontFamily:'Playfair Display, serif' }}>Kathmandu Valley Hikes</span>
-              {!isMobile && <span style={{ fontSize:11, color:'var(--text-muted)' }}>• {routes.length} routes</span>}
-              <div style={{ display:'flex', alignItems:'center', gap:8, marginLeft:4, flexShrink:0 }}>
-                <button className="theme-toggle" onClick={toggleTheme} title="Toggle theme">
-                  {isDark ? <Sun size={14}/> : <Moon size={14}/>}
-                </button>
-                <a
-                  className="theme-toggle"
-                  href={GITHUB_REPO_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title="Open project GitHub repository"
-                  aria-label="Open project GitHub repository"
-                >
-                  <GitHubMark size={14} />
-                </a>
-              </div>
-            </div>
-          </div>
-        )}
+{!sidebarOpen && (
+  <div style={{ position:'absolute', top: isMobile ? 12 : 16, left: isMobile ? 12 : 16, zIndex:1000 }}>
+    <div style={{ padding: isMobile ? '6px 10px' : '8px 14px', background:'var(--bg-primary)', border:`1px solid var(--border)`, borderRadius:12, backdropFilter:'blur(12px)', display:'flex', alignItems:'center', gap:8, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+      <button className="theme-toggle" onClick={() => { setSidebarOpen(true); fireSidebarToggle(); }} title="Open Sidebar" style={{ border:'none', background:'transparent', color: 'var(--text-primary)' }}>
+        <Menu size={18}/>
+      </button>
+      <img src={resolveAssetUrl('/logo.png')} alt="Logo" style={{ width:32, height:32, borderRadius:6, objectFit:'cover' }} />
+      <span style={{ fontSize:13, fontWeight:700, color:'var(--text-primary)', fontFamily:'Playfair Display, serif' }}>MAP MINERS</span>
+      {!isMobile && <span style={{ fontSize:11, color:'var(--text-muted)' }}>â€¢ {routes.length} routes</span>}
+      <div style={{ display:'flex', alignItems:'center', gap:8, marginLeft:4, flexShrink:0 }}>
+        <button className="theme-toggle" onClick={toggleTheme} title="Toggle theme">
+          {isDark ? <Sun size={14}/> : <Moon size={14}/>}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
 
         <MapView
           routes={filteredRoutes}
@@ -455,6 +691,117 @@ export default function App() {
           />
         )}
       </div>
+
+{isAuthModalOpen && (
+  <div
+    role="presentation"
+    onClick={() => setIsAuthModalOpen(false)}
+    style={{ position:'fixed', inset:0, zIndex:3000, display:'flex', alignItems:'center', justifyContent:'center', padding:20, background:'rgba(15,23,42,0.55)', backdropFilter:'blur(4px)' }}
+  >
+    <div
+      onClick={event => event.stopPropagation()}
+      style={{ width:'min(100%, 420px)', padding:24, borderRadius:14, background:'var(--bg-card)', border:'1px solid var(--border)', boxShadow:'0 20px 60px rgba(0,0,0,0.25)' }}
+    >
+      <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:16, marginBottom:18 }}>
+        <div>
+          <div style={{ fontSize:18, fontWeight:800, color:'var(--text-primary)' }}>Sign in to Contribute</div>
+          <div style={{ marginTop:5, fontSize:11, lineHeight:1.5, color:'var(--text-muted)' }}>Sign in with Google to add trails to the map.</div>
+        </div>
+        <button onClick={() => setIsAuthModalOpen(false)} style={{ display:'flex', padding:5, border:'none', background:'transparent', color:'var(--text-muted)', cursor:'pointer' }}>
+          <X size={18} />
+        </button>
+      </div>
+
+      <input
+        type="text"
+        placeholder="Your name"
+        value={authModalName}
+        onChange={(e) => setAuthModalName(e.target.value)}
+        style={{
+          width:'100%',
+          padding:'10px 12px',
+          marginBottom:12,
+          borderRadius:8,
+          border:'1px solid var(--border)',
+          background:'var(--input-bg)',
+          color:'var(--text-primary)',
+          fontSize:12,
+          outline:'none',
+          boxSizing:'border-box'
+        }}
+      />
+
+      <button 
+        onClick={handleGoogleSignIn}
+        disabled={!authModalName.trim()}
+        style={{ 
+          width:'100%', 
+          padding:'10px 12px', 
+          border:'none', 
+          borderRadius:8, 
+          background:'var(--accent-primary)', 
+          color:'white', 
+          fontSize:12, 
+          fontWeight:700, 
+          cursor: authModalName.trim() ? 'pointer' : 'not-allowed',
+          display:'flex', 
+          alignItems:'center', 
+          justifyContent:'center', 
+          gap:8,
+          opacity: authModalName.trim() ? 1 : 0.5
+        }}>
+        Sign in with Google
+      </button>
+    </div>
+  </div>
+)}
+
+      {isContributionOpen && (
+        <div
+          role="presentation"
+          onClick={() => setIsContributionOpen(false)}
+          style={{ position:'fixed', inset:0, zIndex:3000, display:'flex', alignItems:'center', justifyContent:'center', padding:20, background:'rgba(15,23,42,0.55)', backdropFilter:'blur(4px)' }}
+        >
+          <form
+            onSubmit={handleContribute}
+            onClick={event => event.stopPropagation()}
+            style={{ width:'min(100%, 420px)', padding:24, borderRadius:14, background:'var(--bg-card)', border:'1px solid var(--border)', boxShadow:'0 20px 60px rgba(0,0,0,0.25)' }}
+          >
+            <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:16, marginBottom:18 }}>
+              <div>
+                <div style={{ fontSize:18, fontWeight:800, color:'var(--text-primary)' }}>Contribute a map</div>
+                <div style={{ marginTop:5, fontSize:11, lineHeight:1.5, color:'var(--text-muted)' }}>Save GPX, KML, or JSON data in the shared library.</div>
+              </div>
+              <button type="button" onClick={() => setIsContributionOpen(false)} aria-label="Close contribution dialog" style={{ display:'flex', padding:5, border:'none', background:'transparent', color:'var(--text-muted)', cursor:'pointer' }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <label style={{ display:'block', marginBottom:14 }}>
+              <span style={{ display:'block', marginBottom:6, fontSize:11, fontWeight:700, color:'var(--text-secondary)' }}>Trail name</span>
+              <input
+                autoFocus
+                value={contributionName}
+                onChange={event => setContributionName(event.target.value)}
+                placeholder="e.g. Shivapuri sunrise loop"
+                style={{ width:'100%', boxSizing:'border-box', padding:'10px 11px', border:'1px solid var(--border)', borderRadius:8, background:'var(--input-bg)', color:'var(--text-primary)', fontSize:13, outline:'none' }}
+              />
+            </label>
+
+            <label style={{ display:'block', marginBottom:14 }}>
+              <span style={{ display:'block', marginBottom:6, fontSize:11, fontWeight:700, color:'var(--text-secondary)' }}>Route file</span>
+              <input type="file" accept=".gpx,.kml,.json,application/gpx+xml,application/vnd.google-earth.kml+xml,application/json" onChange={handleContributionFile} style={{ width:'100%', color:'var(--text-secondary)', fontSize:12 }} />
+              {contributionFile && <div style={{ marginTop:6, fontSize:11, color:'var(--accent-primary)' }}>{contributionFile.name}</div>}
+            </label>
+
+            {contributionError && <div role="alert" style={{ marginBottom:14, padding:'8px 10px', borderRadius:7, background:'rgba(239,68,68,0.1)', color:'#ef4444', fontSize:11 }}>{contributionError}</div>}
+
+            <button type="submit" disabled={isContributing} style={{ width:'100%', padding:'10px 12px', border:'none', borderRadius:8, background:'var(--accent-primary)', color:'white', fontSize:12, fontWeight:700, cursor:isContributing ? 'wait' : 'pointer', opacity:isContributing ? 0.7 : 1 }}>
+              {isContributing ? 'Saving routeâ€¦' : 'Save trail for everyone'}
+            </button>
+          </form>
+        </div>
+      )}
     </div>
   );
 }
@@ -476,7 +823,7 @@ function LoadingStatus({ state, onReload }) {
       <div style={{ marginTop:12 }}>
         <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
           <span style={{ fontSize:11, color:'var(--text-muted)' }}>
-            Loading routes… {state.loaded}/{state.total}
+            Loading routesâ€¦ {state.loaded}/{state.total}
           </span>
           <span style={{ fontSize:11, color:'var(--accent-primary)', fontFamily:'JetBrains Mono, monospace' }}>{state.progress}%</span>
         </div>

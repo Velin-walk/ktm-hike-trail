@@ -1,20 +1,20 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { X, Mountain, TrendingUp, TrendingDown, Clock, Download, MapPin, Flag, Star, Share2, Check } from 'lucide-react';
 import ElevationChart from './ElevationChart';
+import { routeToGPX } from '../utils/kmlParser';
+import { resolveAssetUrl } from '../utils/assetUrl';
 
 const ROUTE_COLORS = [
-  '#f97316', '#60a5fa', '#34d399', '#f59e0b', '#a78bfa',
-  '#fb7185', '#22d3ee', '#84cc16', '#e879f9', '#38bdf8',
+  '#f92916', 
 ];
 
 const DIFF_COLORS = {
-  Easy: '#34d399', Moderate: '#fbbf24', Hard: '#f97316', Extreme: '#ef4444'
-};
+  Easy: '#f92916'};
 
 const MIN_HEIGHT = 80;
 const MAX_HEIGHT_VH = 85;
 
-const ACTIVE_ROUTE_FALLBACK_IMAGE = `${process.env.PUBLIC_URL}/images/20260509_123225.jpg`;
+const ACTIVE_ROUTE_FALLBACK_IMAGE = resolveAssetUrl('/images/20260509_123225.jpg');
 
 function formatEstimatedTime(hours) {
   if (typeof hours !== 'number' || Number.isNaN(hours)) return '-';
@@ -179,7 +179,7 @@ export default function RouteDetail({ route, index, onClose, isMobile, onHeightC
       const delta = dragStartY.current - clientY;
       const maxH = window.innerHeight * MAX_HEIGHT_VH / 100;
       const newH = Math.min(maxH, Math.max(MIN_HEIGHT, dragStartHeight.current + delta));
-      // Direct DOM mutation — zero React re-renders during drag
+      // Direct DOM mutation â€” zero React re-renders during drag
       panelRef.current.style.height = `${newH}px`;
     };
 
@@ -214,7 +214,7 @@ export default function RouteDetail({ route, index, onClose, isMobile, onHeightC
     const shareUrl = `${baseUrl}?route=${encodeURIComponent(route?.fileName || '')}`;
     const shareData = {
       title: route?.name || 'Hiking Route',
-      text: `Check out this hike: ${route?.name} — ${route?.stats?.distance}km, +${route?.stats?.elevationGain}m gain`,
+      text: `Check out this hike: ${route?.name} â€” ${route?.stats?.distance}km, +${route?.stats?.elevationGain}m gain`,
       url: shareUrl,
     };
 
@@ -227,7 +227,7 @@ export default function RouteDetail({ route, index, onClose, isMobile, onHeightC
         setTimeout(() => setShareToast(false), 2200);
       }
     } catch (err) {
-      // User cancelled share dialog, or clipboard failed — try fallback
+      // User cancelled share dialog, or clipboard failed â€” try fallback
       if (err.name !== 'AbortError') {
         try {
           await navigator.clipboard.writeText(shareUrl);
@@ -239,6 +239,20 @@ export default function RouteDetail({ route, index, onClose, isMobile, onHeightC
         }
       }
     }
+  }, [route]);
+
+  const handleExport = useCallback((event) => {
+    if (!route?.isContributed) return;
+    event.preventDefault();
+    const blob = new Blob([routeToGPX(route)], { type: 'application/gpx+xml;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${route.name || 'hiking-route'}.gpx`.replace(/[\\/:*?"<>|]+/g, '-');
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
   }, [route]);
 
   const shouldAutoSizePages = window.innerWidth >= 600;
@@ -313,7 +327,7 @@ export default function RouteDetail({ route, index, onClose, isMobile, onHeightC
             />
           </div>
 
-          {/* Header — always visible */}
+          {/* Header â€” always visible */}
           <div
             style={{
               position: 'relative',
@@ -353,12 +367,42 @@ export default function RouteDetail({ route, index, onClose, isMobile, onHeightC
                   }}>
                     {route.difficulty}
                   </span>
+
+                  {route?.contributorName && (
+                    <div style={{
+                      display: 'inline-flex', flexDirection: 'column', gap: 2,
+                      marginTop: 8,
+                    }}>
+                      <span style={{
+                        fontSize: 10, fontWeight: 700,
+                        color: 'rgba(255,255,255,0.8)',
+                        letterSpacing: '0.06em',
+                        textTransform: 'uppercase',
+                        textShadow: '0 1px 2px rgba(0,0,0,0.45)',
+                      }}>
+                        Contributed by
+                      </span>
+                      <span style={{
+                        fontSize: 12, fontWeight: 600,
+                        color: '#f8fafc',
+                        textShadow: '0 1px 3px rgba(0,0,0,0.5)',
+                      }}>
+                        {route.contributorName}
+                        {route.contributorEmail && (
+                          <span style={{ color: 'rgba(255,255,255,0.8)', fontWeight: 500 }}>
+                            {' · '}{maskEmail(route.contributorEmail)}
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, flexWrap: 'wrap' }}>
                   <a
-                    href={`${process.env.PUBLIC_URL}/kml/${encodeURIComponent(route.fileName)}`}
+                    href={route.isContributed ? 'data:text/plain,' : resolveAssetUrl(`/kml/${encodeURIComponent(route.fileName)}`)}
                     download
+                    onClick={handleExport}
                     style={{
                       display: 'inline-flex', alignItems: 'center', gap: 5,
                       fontSize: isMobile ? 10 : 11, fontWeight: 600, color: '#ffffff',
@@ -662,7 +706,7 @@ function BigStat({ icon, value, label, color, compact = false, showRightDivider 
   );
 }
 
-function StartEndBar({ startValue, endValue }) {
+function StartEndBar({ startValue, endValue, route }) {
   return (
     <div style={{
       background: 'var(--bg-card)',
@@ -681,6 +725,26 @@ function StartEndBar({ startValue, endValue }) {
         <div className="section-label" style={{ marginBottom: 2, textAlign: 'right' }}>End</div>
         <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'JetBrains Mono, monospace', textAlign: 'right' }}>{endValue}</div>
       </div>
+
+      {route?.contributorName && (
+        <div style={{ gridColumn: '1 / -1', marginTop: 12, padding: '10px 12px', borderRadius: 8, background: 'var(--bg-secondary)', border: '1px solid var(--border)' }}>
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Contributed by</div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent-primary)' }}>{route.contributorName}</div>
+          {route.contributorEmail && (
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>{maskEmail(route.contributorEmail)}</div>
+          )}
+        </div>
+      )}
     </div>
   );
+}
+
+function maskEmail(email) {
+  if (!email) return '';
+  const [localPart, domainPart] = String(email).split('@');
+  if (!domainPart) return email;
+
+  const visibleChars = localPart.length > 2 ? localPart.slice(0, 2) : localPart.slice(0, localPart.length);
+  const maskedChars = '*'.repeat(Math.max(4, localPart.length - visibleChars.length));
+  return `${visibleChars}${maskedChars}@${domainPart}`;
 }

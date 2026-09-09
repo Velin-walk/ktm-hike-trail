@@ -199,6 +199,9 @@ files.forEach(file => {
     description: existing?.description !== undefined ? existing.description : parsedData.description,
     difficultyOverride: existing?.difficultyOverride || "Auto",
     hoursOverride: existing?.hoursOverride || "Auto",
+    contributorName: existing?.contributorName || '',
+    contributorEmail: existing?.contributorEmail || '',
+    contributorUid: existing?.contributorUid || '',
     // Computed values
     calculatedDifficulty: parsedData.difficulty,
     stats: parsedData.stats,
