@@ -244,24 +244,20 @@ useEffect(() => {
         if (!parsedRoute) throw new Error('No route points were found in that file.');
       }
 
-      const contributorDisplayName = authModalName.trim() || user?.displayName || user?.email || contributionName.trim();
-      const formData = new FormData();
-      formData.append('name', contributionName.trim());
-      formData.append('file', contributionFile);
-      formData.append('email', user?.email || '');
-      formData.append('contributorName', contributorDisplayName);
-      formData.append('contributorUid', user?.uid || '');
-      const response = await fetch('/api/upload', { method: 'POST', body: formData });
-      const responseText = await response.text();
-      let result;
-      try {
-        result = JSON.parse(responseText);
-      } catch {
-        throw new Error(response.status === 404
-          ? 'Upload API not found. Start the Express server with "node server.js" and restart the React app.'
-          : 'Upload API returned an invalid response. Check that the Express server is running.');
+      const sanitizedFileName = `${contributionName.trim().replace(/[^a-zA-Z0-9_-]/g, '_')}.${extension}`;
+
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        headers: {
+          'x-file-name': sanitizedFileName,
+        },
+        body: contributionFile,
+      });
+
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to upload route to repository');
       }
-      if (!response.ok) throw new Error(result.error || 'Could not save this route.');
 
       if (extension === 'kml' || extension === 'gpx') await loadKMLFolder();
       setIsContributionOpen(false);
