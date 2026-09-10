@@ -891,11 +891,5 @@ function LoadingStatus({ state, onReload }) {
     );
   }
 
-  return (
-    <div style={{ marginTop:10, display:'flex', alignItems:'center', justifyContent:'flex-end' }}>
-      <button onClick={onReload} style={{ fontSize:10, color:'var(--text-muted)', background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', gap:3 }}>
-        <RefreshCw size={10}/> Reload
-      </button>
-    </div>
-  );
+  return null;
 }
