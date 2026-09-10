@@ -3422,5 +3422,42 @@
       "lat": 27.979943,
       "lng": 85.657816
     }
+  },
+  "1789008184801_087_WNW_111.Namobuddha_to_Khopasi.kml": {
+    "description": "",
+    "difficultyOverride": "Auto",
+    "hoursOverride": "Auto",
+    "calculatedDifficulty": "Moderate",
+    "stats": {
+      "distance": 8.82,
+      "elevationGain": 900,
+      "elevationLoss": 965,
+      "minElevation": 1476,
+      "maxElevation": 1781,
+      "startElevation": 1541,
+      "endElevation": 1476,
+      "estimatedHours": 3.3,
+      "pointCount": 11462
+    },
+    "bounds": [
+      [
+        27.570481,
+        85.570746
+      ],
+      [
+        27.598948,
+        85.590295
+      ]
+    ],
+    "startPos": {
+      "lat": 27.598948,
+      "lng": 85.5767,
+      "ele": 1541
+    },
+    "name": "eeeee",
+    "uploadedAt": "2026-09-10T02:43:04.801Z",
+    "contributorName": "Velin Rai",
+    "contributorEmail": "velinrai.vr@gmail.com",
+    "contributorUid": "Ok8rw1e8ErUpBSoe3MBNuP5oLQR2"
   }
 }
