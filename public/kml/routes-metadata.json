@@ -3459,5 +3459,42 @@
     "contributorName": "Velin Rai",
     "contributorEmail": "velinrai.vr@gmail.com",
     "contributorUid": "Ok8rw1e8ErUpBSoe3MBNuP5oLQR2"
+  },
+  "1789028709995_088_WNW_112.Dalchoki_Pathivara.kml": {
+    "description": "",
+    "difficultyOverride": "Auto",
+    "hoursOverride": "Auto",
+    "calculatedDifficulty": "Moderate",
+    "stats": {
+      "distance": 10.2,
+      "elevationGain": 1058,
+      "elevationLoss": 1184,
+      "minElevation": 1651,
+      "maxElevation": 2247,
+      "startElevation": 1785,
+      "endElevation": 1659,
+      "estimatedHours": 3.8,
+      "pointCount": 18649
+    },
+    "bounds": [
+      [
+        27.537525,
+        85.322142
+      ],
+      [
+        27.555062,
+        85.350037
+      ]
+    ],
+    "startPos": {
+      "lat": 27.555062,
+      "lng": 85.350037,
+      "ele": 1785
+    },
+    "name": "ollllalala",
+    "uploadedAt": "2026-09-10T08:25:09.995Z",
+    "contributorName": "Bimal Dhital",
+    "contributorEmail": "bimaldhital@gmail.com",
+    "contributorUid": "zsyHM9HloOdZi69uQOsiyWnMM263"
   }
 }
