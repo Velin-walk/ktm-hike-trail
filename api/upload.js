@@ -27,14 +27,19 @@ function safeFileName(value) {
 }
 
 function getConfig() {
-  const token = process.env.GITHUB_TOKEN || process.env.GITHUB_PAT;
-  const owner = process.env.GITHUB_OWNER;
-  const repo = process.env.GITHUB_REPO;
+  const token =
+    process.env.GITHUB_TOKEN ||
+    process.env.GITHUB_PAT ||
+    process.env.REPO_GITHUB_TOKEN;
+  const owner = process.env.GITHUB_OWNER || process.env.REPO_OWNER;
+  const repo = process.env.GITHUB_REPO || process.env.REPO_NAME;
   const branch = process.env.GITHUB_BRANCH || 'main';
   const firebaseApiKey = process.env.FIREBASE_API_KEY;
+
   if (!token || !owner || !repo || !firebaseApiKey) {
     throw new Error('Upload storage is not configured. Set GitHub and Firebase variables in Vercel.');
   }
+
   return { token, owner, repo, branch, firebaseApiKey };
 }
 
