@@ -119,3 +119,19 @@ If you want to regenerate metadata without building, you can still run:
 ```bash
 npm run manifest
 ```
+
+## Vercel uploads
+
+The local Express server can write to `public/kml/`, but Vercel's filesystem is temporary. The Vercel function at `api/upload.js` commits uploaded route files and metadata to GitHub, which then triggers the normal deployment.
+
+In the Vercel project settings, add these environment variables:
+
+```text
+GITHUB_TOKEN       GitHub token with Contents read/write access
+GITHUB_OWNER       GitHub repository owner
+GITHUB_REPO        GitHub repository name
+GITHUB_BRANCH      Branch to update, normally main
+FIREBASE_API_KEY   Firebase Web API key for the existing project
+```
+
+The GitHub token stays server-side. Uploads still require the signed-in Firebase user session, and the route is inserted into the current browser session immediately after GitHub accepts the commit.

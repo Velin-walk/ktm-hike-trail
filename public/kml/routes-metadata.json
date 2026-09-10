@@ -3295,6 +3295,38 @@
       "lng": 85.248283
     }
   },
+  "1789005045237_288_Dhap_Dam_Loop_6_Sept_2026.kml": {
+    "name": "test56",
+    "description": "",
+    "difficultyOverride": "Auto",
+    "hoursOverride": "Auto",
+    "contributorName": "",
+    "contributorEmail": "",
+    "contributorUid": "",
+    "calculatedDifficulty": "Hard",
+    "stats": {
+      "distance": 26.68,
+      "elevationGain": 1308,
+      "elevationLoss": 1308,
+      "minElevation": 1387,
+      "maxElevation": 2427,
+      "estimatedHours": 7.5
+    },
+    "bounds": [
+      [
+        27.75922,
+        85.42069700000002
+      ],
+      [
+        27.824519,
+        85.45863499999996
+      ]
+    ],
+    "startPos": {
+      "lat": 27.759274,
+      "lng": 85.42077300000005
+    }
+  },
   "Muhan Pokhari - Bagdwar - Tinchule - Shivapuri Peak.kml": {
     "name": "Muhan Pokhari - Bagdwar - Tinchule - Shivapuri Peak",
     "description": "",

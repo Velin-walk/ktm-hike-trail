@@ -235,31 +235,67 @@ useEffect(() => {
     try {
       const fileText = await contributionFile.text();
       const extension = contributionFile.name.split('.').pop()?.toLowerCase();
+      let parsedRoute = null;
       if (extension === 'json') {
         JSON.parse(fileText);
       } else {
-        const parsedRoute = extension === 'gpx'
+        parsedRoute = extension === 'gpx'
           ? parseGPX(fileText, contributionFile.name, contributionName)
           : parseKML(fileText, contributionFile.name, contributionName);
         if (!parsedRoute) throw new Error('No route points were found in that file.');
       }
 
-      const sanitizedFileName = `${contributionName.trim().replace(/[^a-zA-Z0-9_-]/g, '_')}.${extension}`;
-
+      const contributorDisplayName = authModalName.trim() || user?.displayName || user?.email || contributionName.trim();
+      const idToken = await user.getIdToken();
+      const formData = new FormData();
+      formData.append('name', contributionName.trim());
+      formData.append('file', contributionFile);
+      formData.append('email', user?.email || '');
+      formData.append('contributorName', contributorDisplayName);
+      formData.append('contributorUid', user?.uid || '');
+      if (parsedRoute) {
+        formData.append('routeMetadata', JSON.stringify({
+          description: parsedRoute.description || '',
+          difficultyOverride: 'Auto',
+          hoursOverride: 'Auto',
+          calculatedDifficulty: parsedRoute.difficulty,
+          stats: parsedRoute.stats,
+          bounds: parsedRoute.bounds,
+          startPos: parsedRoute.coordinates?.[0] || null,
+        }));
+      }
       const response = await fetch('/api/upload', {
         method: 'POST',
-        headers: {
-          'x-file-name': sanitizedFileName,
-        },
-        body: contributionFile,
+        headers: { Authorization: `Bearer ${idToken}` },
+        body: formData,
       });
-
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to upload route to repository');
+      const responseText = await response.text();
+      let result;
+      try {
+        result = JSON.parse(responseText);
+      } catch {
+        throw new Error(response.status === 404
+          ? 'Upload API not found. Start the Express server with "node server.js" and restart the React app.'
+          : 'Upload API returned an invalid response. Check that the Express server is running.');
       }
+      if (!response.ok) throw new Error(result.error || 'Could not save this route.');
 
-      if (extension === 'kml' || extension === 'gpx') await loadKMLFolder();
+      if (parsedRoute && result.fileName) {
+        const uploadedRoute = {
+          ...parsedRoute,
+          id: `uploaded-${Date.now()}`,
+          fileName: result.fileName,
+          name: result.name,
+          uploadedAt: result.uploadedAt || new Date().toISOString(),
+          contributorName: contributorDisplayName,
+          contributorEmail: user?.email || '',
+          contributorUid: user?.uid || '',
+          isLazyLoaded: true,
+        };
+        setRoutes(prev => [uploadedRoute, ...prev]);
+      } else {
+        await loadKMLFolder();
+      }
       setIsContributionOpen(false);
       setContributionName('');
       setContributionFile(null);
