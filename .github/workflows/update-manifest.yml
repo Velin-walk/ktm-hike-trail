@@ -1,0 +1,37 @@
+name: Auto-update Routes Metadata
+
+on:
+  push:
+    paths:
+      - 'public/kml/**.kml'
+      - 'public/kml/**.gpx'
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  update-metadata:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run manifest generator
+        run: node update-manifest.js
+
+      - name: Commit and push updated routes-metadata.json
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/kml/routes-metadata.json
+          git diff-index --quiet HEAD || (git commit -m "Auto-update routes-metadata.json [skip ci]" && git push)
